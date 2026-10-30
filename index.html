@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Menu</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  body{padding-bottom:110px}
+  .hero{background:linear-gradient(135deg,#2b2420,#5a3a2a);color:#fff;padding:26px 18px 22px}
+  .hero h1{font-size:26px}
+  .hero .tag{opacity:.75;margin-top:4px}
+  .hero .table{display:inline-block;margin-top:12px;background:rgba(255,255,255,.14);padding:5px 12px;border-radius:99px;font-weight:600;font-size:14px}
+  .stick{position:sticky;top:0;z-index:10;background:var(--bg);border-bottom:1px solid var(--line)}
+  .search{position:relative;max-width:640px;margin:0 auto;padding:12px 16px 0}
+  .search input{padding:12px 40px;border-radius:12px;font-size:16px}
+  .search .ic{position:absolute;left:29px;top:calc(50% + 6px);transform:translateY(-50%);opacity:.55;pointer-events:none}
+  .search .clr{position:absolute;right:24px;top:calc(50% + 6px);transform:translateY(-50%);border:0;background:#eee;width:26px;height:26px;border-radius:50%;font-size:14px;line-height:1;color:var(--muted)}
+  .cats{display:flex;gap:8px;overflow-x:auto;padding:12px 16px;scrollbar-width:none;max-width:640px;margin:0 auto}
+  .cats::-webkit-scrollbar{display:none}
+  .cats button{flex:none;border:1px solid var(--line);background:#fff;border-radius:99px;padding:7px 15px;font-weight:600;font-size:14px;white-space:nowrap}
+  .cats button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  main{max-width:640px;margin:0 auto;padding:6px 16px}
+  .section h2{font-size:19px;margin:22px 0 10px}
+  .item{display:flex;gap:12px;padding:14px;margin-bottom:10px;align-items:center}
+  .item img{width:74px;height:74px;border-radius:10px;object-fit:cover;flex:none;background:#f1e9e1}
+  .item .info{flex:1;min-width:0}
+  .item .nm{font-weight:650}
+  .item .ds{font-size:13px;color:var(--muted);margin-top:2px}
+  .item .pr{font-weight:700;margin-top:6px;color:var(--brand)}
+  .qty{display:flex;align-items:center;gap:6px;flex:none}
+  .qty button{width:34px;height:34px;border-radius:10px;border:0;background:var(--brand-soft);color:var(--brand);font-size:20px;font-weight:700;line-height:1}
+  .qty .n{min-width:20px;text-align:center;font-weight:700}
+  .add{border:1.5px solid var(--brand);color:var(--brand);background:#fff;border-radius:10px;padding:7px 18px;font-weight:700}
+  .cartbar{position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));max-width:616px;margin:0 auto;z-index:30;display:flex;gap:8px}
+  .cartbar .go{flex:1;display:flex;justify-content:space-between;align-items:center;padding:15px 18px;border-radius:14px;font-size:16px;box-shadow:0 6px 20px rgba(194,83,46,.35)}
+  .call{flex:none;border-radius:14px;background:#fff;border:1px solid var(--line);padding:0 14px;font-weight:600;box-shadow:var(--shadow)}
+  .sheet-bg{position:fixed;inset:0;background:rgba(30,20,10,.45);z-index:40;display:flex;align-items:flex-end}
+  .sheet{background:#fff;width:100%;max-width:640px;margin:0 auto;border-radius:20px 20px 0 0;padding:20px 18px calc(20px + env(safe-area-inset-bottom));max-height:88vh;overflow:auto}
+  .sheet h2{font-size:20px;margin-bottom:12px}
+  .line{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .line .nm{flex:1}
+  .total{display:flex;justify-content:space-between;font-weight:800;font-size:18px;margin:14px 0}
+  .track .card{padding:16px;margin-bottom:12px}
+  .steps{display:flex;margin:14px 0 6px}
+  .step{flex:1;text-align:center;font-size:12px;color:var(--muted);position:relative}
+  .step .dot{width:28px;height:28px;border-radius:50%;background:#eee;margin:0 auto 6px;display:grid;place-items:center;font-size:14px;position:relative;z-index:1}
+  .step:not(:first-child)::before{content:"";position:absolute;top:14px;right:50%;width:100%;height:3px;background:#eee}
+  .step.done{color:var(--ink);font-weight:600}
+  .step.done .dot{background:var(--green);color:#fff}
+  .step.done::before{background:var(--green)}
+  .empty{text-align:center;padding:60px 20px}
+</style>
+</head>
+<body>
+<div id="app"><div class="empty muted">Loading menu…</div></div>
+<script src="config.js"></script>
+<script src="firebase-app-compat.js"></script>
+<script src="firebase-auth-compat.js"></script>
+<script src="firebase-database-compat.js"></script>
+<script src="common.js"></script>
+<script>
+const table = (new URLSearchParams(location.search).get('table') || '').trim();
+const KEY = 'ck_orders_' + table;
+let items = [], settings = {}, cart = {}, myOrders = [];
+const watching = {};
+
+function loadMine() { try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; } }
+function saveMine() { try { localStorage.setItem(KEY, JSON.stringify(Object.keys(watching))); } catch {} }
+
+async function init() {
+  if (!CONFIGURED) return showSetupNeeded($('#app'));
+  settings = await loadSettings();
+  document.title = settings.cafeName + ' · Menu';
+  const validTable = table && !/[.#$\[\]\/]/.test(table) && (await db.ref('tables/' + table + '/sort').once('value')).exists();
+  if (!validTable) {
+    $('#app').innerHTML = `<div class="empty"><div style="font-size:44px">📷</div><h2>Please scan the QR code on your table</h2><p class="muted">We couldn't find your table number.</p></div>`;
+    return;
+  }
+  render();
+  // live menu (new items, price changes, sold out)
+  db.ref('menu').on('value', snap => {
+    items = listOf(snap.val()).filter(i => i.available).map(i => ({ ...i, price: Number(i.price) || 0 }))
+      .sort((a, b) => String(a.category).localeCompare(b.category) || String(a.name).localeCompare(b.name));
+    for (const id in cart) if (!items.find(i => i.id === id)) delete cart[id];
+    renderMenu(); renderBar();
+  }, e => toast(friendly(e), 'alert'));
+  // follow this phone's orders from today (live)
+  loadMine().forEach(watchOrder);
+}
+
+function watchOrder(id) {
+  if (watching[id]) return;
+  watching[id] = true;
+  db.ref('orders/' + id).on('value', snap => {
+    const v = snap.val();
+    if (!v || Date.now() - (v.createdAt || 0) > 12 * 3600e3) {
+      db.ref('orders/' + id).off(); delete watching[id]; saveMine();
+      myOrders = myOrders.filter(o => o.id !== id); renderTrack(); return;
+    }
+    const o = normOrder({ id, ...v });
+    const old = myOrders.find(x => x.id === id);
+    if (old && old.status !== o.status) {
+      if (o.status === 'processing') toast('👨‍🍳 Your order ' + o.code + ' is being prepared');
+      if (o.status === 'delivered') toast('✅ Order ' + o.code + ' delivered. Enjoy!');
+      if (o.status === 'cancelled') toast('Order ' + o.code + ' was cancelled. Please ask staff.', 'alert');
+    }
+    myOrders = [o, ...myOrders.filter(x => x.id !== id)].sort((a, b) => b.createdAt - a.createdAt);
+    renderTrack();
+  }, () => { delete watching[id]; saveMine(); });
+  saveMine();
+}
+
+const cats = () => [...new Set(items.map(i => i.category))];
+const count = () => Object.values(cart).reduce((a, b) => a + b, 0);
+const sum = () => Object.entries(cart).reduce((s, [id, n]) => s + (items.find(i => i.id === id)?.price || 0) * n, 0);
+
+function render() {
+  $('#app').innerHTML = `
+    <header class="hero">
+      <h1>☁️ ${esc(settings.cafeName)}</h1>
+      <div class="tag">${esc(settings.tagline || '')}</div>
+      <div class="table">🍽️ ${esc(place(table))}</div>
+    </header>
+    <div class="stick">
+      <div class="search"><span class="ic">🔍</span>
+        <input type="search" id="q" placeholder="Search food… e.g. momo, coffee" autocomplete="off" enterkeyhint="search">
+        <button class="clr hidden" id="clr" aria-label="Clear search">✕</button></div>
+      <nav class="cats" id="cats"></nav>
+    </div>
+    <main><div class="track" id="track"></div><div id="menu"><div class="empty muted">Loading menu…</div></div></main>
+    <div class="cartbar" id="bar"></div>`;
+  renderTrack(); renderBar();
+  const qi = $('#q'), clr = $('#clr');
+  qi.oninput = () => { clr.classList.toggle('hidden', !qi.value); renderMenu(); };
+  qi.onkeydown = e => { if (e.key === 'Enter') qi.blur(); };
+  clr.onclick = () => { qi.value = ''; clr.classList.add('hidden'); renderMenu(); qi.focus(); };
+}
+
+const qtyHtml = id => cart[id]
+  ? `<div class="qty"><button data-d="-">−</button><span class="n">${cart[id]}</span><button data-d="+">+</button></div>`
+  : `<button class="add" data-d="+">Add</button>`;
+const itemHtml = it => `
+  <div class="card item">
+    ${it.image ? `<img src="${esc(it.image)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+    <div class="info">
+      <div class="nm">${esc(it.name)}</div>
+      ${it.description ? `<div class="ds">${esc(it.description)}</div>` : ''}
+      <div class="pr">${money(it.price)}</div>
+    </div>
+    <div data-id="${esc(it.id)}">${qtyHtml(it.id)}</div>
+  </div>`;
+
+function renderMenu() {
+  if (!$('#menu')) return;
+  const query = ($('#q')?.value || '').trim();
+  $('#cats').classList.toggle('hidden', !!query);
+  if (query) {
+    const shown = items.filter(it => matches(query, it.name, it.description, it.category));
+    $('#menu').innerHTML = shown.length
+      ? `<section class="section"><h2>${shown.length} result${shown.length > 1 ? 's' : ''} for “${esc(query)}”</h2>${shown.map(itemHtml).join('')}</section>`
+      : `<div class="empty"><div style="font-size:40px">🔍</div><h2>No food found</h2><p class="muted">Try another word, or clear the search to see the full menu.</p></div>`;
+  } else {
+    const cs = cats();
+    $('#cats').innerHTML = cs.map((c, i) => `<button data-c="${i}" class="${i ? '' : 'on'}">${esc(c)}</button>`).join('');
+    $('#cats').onclick = e => {
+      const b = e.target.closest('button'); if (!b) return;
+      document.getElementById('cat' + b.dataset.c).scrollIntoView({ behavior: 'smooth', block: 'start' });
+      [...$('#cats').children].forEach(x => x.classList.toggle('on', x === b));
+    };
+    $('#menu').innerHTML = cs.length ? cs.map((c, i) => `
+      <section class="section" id="cat${i}" style="scroll-margin-top:130px">
+        <h2>${esc(c)}</h2>${items.filter(it => it.category === c).map(itemHtml).join('')}
+      </section>`).join('') : `<div class="empty muted">The menu is empty right now.</div>`;
+  }
+  $('#menu').onclick = e => {
+    const b = e.target.closest('button'); if (!b) return;
+    const box = b.closest('[data-id]'), id = box.dataset.id;
+    cart[id] = Math.max(0, Math.min(50, (cart[id] || 0) + (b.dataset.d === '-' ? -1 : 1)));
+    if (!cart[id]) delete cart[id];
+    box.innerHTML = qtyHtml(id); renderBar();
+  };
+}
+
+function renderBar() {
+  if (!$('#bar')) return;
+  const n = count();
+  $('#bar').innerHTML = `
+    <button class="call" id="call">🙋 Call<br>waiter</button>
+    ${n ? `<button class="btn go" id="go"><span>${n} item${n > 1 ? 's' : ''} · ${money(sum())}</span><span>View cart →</span></button>` : ''}`;
+  $('#call').onclick = async () => {
+    try { await db.ref('calls/' + table).set({ at: TS() }); } catch { /* already called in the last 30 s */ }
+    toast('🙋 A waiter is on the way');
+  };
+  if (n) $('#go').onclick = openCart;
+}
+
+async function placeOrder(note) {
+  const lines = Object.entries(cart).map(([id, qty]) => {
+    const it = items.find(i => i.id === id);
+    return it && { id, name: it.name, price: it.price, qty };
+  }).filter(Boolean);
+  if (!lines.length) throw new Error('Your cart is empty.');
+  const id = db.ref('orders').push().key;
+  try {
+    await db.ref().update({
+      ['orders/' + id]: {
+        table, items: lines, note: String(note || '').slice(0, 300), status: 'new', source: 'qr',
+        createdAt: TS(), updatedAt: TS(), createdBy: '', createdByName: '', handledBy: '',
+      },
+      ['tables/' + table + '/lastOrderAt']: TS(),
+    });
+  } catch (e) {
+    if (/PERMISSION_DENIED/i.test((e.code || '') + e.message)) throw new Error('Could not send. Prices may have just changed or an item sold out, or an order was sent a moment ago. Please wait 10 seconds and try again.');
+    throw new Error(friendly(e));
+  }
+  return id;
+}
+
+function openCart() {
+  const bg = document.createElement('div');
+  bg.className = 'sheet-bg';
+  bg.onclick = e => { if (e.target === bg) bg.remove(); };
+  const draw = () => {
+    const lines = Object.entries(cart).map(([id, n]) => ({ it: items.find(i => i.id === id), n })).filter(l => l.it);
+    if (!lines.length) { bg.remove(); renderMenu(); renderBar(); return; }
+    const note = $('#note', bg)?.value || '';
+    bg.innerHTML = `<div class="sheet">
+      <h2>Your order · ${esc(place(table))}</h2>
+      ${lines.map(({ it, n }) => `
+        <div class="line" data-id="${esc(it.id)}">
+          <div class="nm"><b>${esc(it.name)}</b><div class="small muted">${money(it.price)} each</div></div>
+          <div class="qty"><button data-d="-">−</button><span class="n">${n}</span><button data-d="+">+</button></div>
+          <div style="min-width:76px;text-align:right;font-weight:600">${money(it.price * n)}</div>
+        </div>`).join('')}
+      <div class="total"><span>Total</span><span>${money(sum())}</span></div>
+      <div class="field"><label>Note for the kitchen (optional)</label>
+        <textarea id="note" rows="2" maxlength="300" placeholder="e.g. less spicy, no onion">${esc(note)}</textarea></div>
+      <div class="error" id="err"></div>
+      <button class="btn block" id="place" style="padding:15px;font-size:16px">Place order</button>
+    </div>`;
+    $('.sheet', bg).onclick = async e => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.id === 'place') {
+        b.disabled = true; b.textContent = 'Sending…';
+        try {
+          const id = await placeOrder($('#note', bg).value);
+          watchOrder(id);
+          cart = {}; bg.remove(); renderMenu(); renderBar();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          toast('🎉 Order sent! The waiter has been notified.');
+        } catch (err) { $('#err', bg).textContent = err.message; b.disabled = false; b.textContent = 'Place order'; }
+        return;
+      }
+      const id = b.closest('[data-id]')?.dataset.id; if (!id) return;
+      cart[id] = (cart[id] || 0) + (b.dataset.d === '-' ? -1 : 1);
+      if (cart[id] <= 0) delete cart[id];
+      draw(); renderBar();
+    };
+  };
+  document.body.appendChild(bg); draw();
+}
+
+function renderTrack() {
+  const el = $('#track'); if (!el) return;
+  const step = (label, icon, on) => `<div class="step ${on ? 'done' : ''}"><div class="dot">${on ? '✓' : icon}</div>${label}</div>`;
+  el.innerHTML = myOrders.length ? `<h2 style="font-size:19px;margin:16px 0 10px">Your orders</h2>` + myOrders.map(o => {
+    const s = o.status, lvl = { new: 1, processing: 2, delivered: 3 }[s] || 0;
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <b>Order ${esc(o.code)}</b><span class="pill ${esc(s)}">${s === 'new' ? 'received' : esc(s)}</span></div>
+      <div class="small muted" style="margin-top:4px">${o.items.map(l => `${l.qty}× ${esc(l.name)}`).join(', ')} · <b>${money(o.total)}</b></div>
+      ${s === 'cancelled' ? '' : `<div class="steps">${step('Received', '1', lvl >= 1)}${step('Preparing', '2', lvl >= 2)}${step('Delivered', '3', lvl >= 3)}</div>`}
+    </div>`;
+  }).join('') : '';
+}
+init().catch(e => { $('#app').innerHTML = `<div class="empty"><h2>Couldn't load the menu</h2><p class="muted">${esc(friendly(e))}</p></div>`; });
+</script>
+</body>
+</html>
