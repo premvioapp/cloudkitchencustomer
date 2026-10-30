@@ -1,7 +1,7 @@
 // =============================================================
 //  Cloud Kitchen: Firebase settings (put the SAME values in all 3 sites)
 //
-//  Where to find them: Firebase console → ⚙️ Project settings → General →
+//  Where to find them: Firebase console → the gear icon > Project settings → General →
 //  "Your apps" → Web app (</>) → "SDK setup and configuration" → Config.
 //  Copy the values from there into the matching lines below.
 // =============================================================
