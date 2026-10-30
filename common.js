@@ -1,3 +1,4 @@
+window.CK_VERSION = '20261030104128';
 // Shared helpers for all Cloud Kitchen sites (Firebase Realtime Database version)
 const FB = window.CK_FIREBASE || {};
 const CONFIGURED = !!(FB.apiKey && FB.databaseURL && !/PASTE-/.test(FB.apiKey + FB.appId));
@@ -116,7 +117,11 @@ const waStart = n => String(n || '').replace(/[^0-9]/g, '');
 
 const DEFAULT_SETTINGS = { cafeName: 'Cloud Kitchen', currency: 'Rs.', tagline: 'Scan, order, relax.', customerUrl: '' };
 async function loadSettings() {
-  const s = (await db.ref('settings').once('value')).val() || {};
+  // never wait forever: after 8 s carry on with the defaults
+  const s = (await Promise.race([
+    db.ref('settings').once('value').then(x => x.val()),
+    new Promise(r => setTimeout(() => r(null), 8000)),
+  ])) || {};
   const settings = { ...DEFAULT_SETTINGS, ...s };
   CURRENCY = settings.currency || 'Rs.';
   return settings;
