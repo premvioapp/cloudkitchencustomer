@@ -35,6 +35,7 @@ function friendly(err) {
   if (/email-already-in-use/.test(code)) return 'That username is already taken';
   if (/weak-password/.test(code)) return 'Password must be at least 6 characters';
   if (/network-request-failed/.test(code) || /Failed to fetch|NetworkError/i.test(m)) return 'No connection. Check the internet and try again.';
+  if (/operation-not-supported|web-storage-unsupported/.test(code) || location.protocol === 'file:') return 'This page was opened as a file. Logins only work when the site is opened from a web address (GitHub Pages / Netlify). See README.';
   if (/operation-not-allowed/.test(code)) return 'Email/Password sign-in is turned off. In Firebase → Authentication → Sign-in method, enable "Email/Password" (see README).';
   if (/requires-recent-login/.test(code)) return 'Please log out and log in again, then try once more.';
   if (/PERMISSION_DENIED/i.test(code + m)) return 'Not allowed. (If this is a new setup, check that the database rules from database.rules.json are published.)';
