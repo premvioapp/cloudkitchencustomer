@@ -1,4 +1,4 @@
-window.CK_VERSION = '20261030104128';
+window.CK_VERSION = '20261031043856';
 // Shared helpers for all Cloud Kitchen sites (Firebase Realtime Database version)
 const FB = window.CK_FIREBASE || {};
 const CONFIGURED = !!(FB.apiKey && FB.databaseURL && !/PASTE-/.test(FB.apiKey + FB.appId));
@@ -113,6 +113,25 @@ const normOrder = o => {
   };
 };
 const validOrder = o => o && typeof o.table === 'string' && o.items && o.status;
+
+// ---------- Price options (e.g. "6 pcs" Rs. 420 / "10 pcs" Rs. 700) ----------
+// menu/$id/options = { o1: {label, price}, o2: ... }. Cart keys: "id" or "id~o1".
+const optsOf = it => Object.entries((it && it.options) || {})
+  .map(([k, v]) => ({ k, label: String((v && v.label) || ''), price: Number(v && v.price) || 0 }))
+  .sort((a, b) => a.price - b.price || a.k.localeCompare(b.k));
+const cartKey = (id, k) => k ? id + '~' + k : id;
+// what a cart key points to right now (null if the dish or option is gone)
+function cartPick(items, key) {
+  const [id, k] = String(key).split('~');
+  const it = items.find(i => i.id === id); if (!it) return null;
+  const os = optsOf(it);
+  if (!k) return os.length ? null : { key, id, it, opt: '', size: '', name: it.name, price: it.price };
+  const o = os.find(x => x.k === k);
+  return o ? { key, id, it, opt: k, size: o.label, name: it.name, price: o.price } : null;
+}
+const cartLines = (items, cart) => Object.entries(cart).map(([key, n]) => { const p = cartPick(items, key); return p && { ...p, n }; }).filter(Boolean);
+const orderLine = (p, qty) => p.opt ? { id: p.id, name: p.name, opt: p.opt, size: p.size, price: p.price, qty } : { id: p.id, name: p.name, price: p.price, qty };
+const lineName = l => l.size ? `${l.name} (${l.size})` : l.name;
 const waStart = n => String(n || '').replace(/[^0-9]/g, '');
 
 const DEFAULT_SETTINGS = { cafeName: 'Cloud Kitchen', currency: 'Rs.', tagline: 'Scan, order, relax.', customerUrl: '' };

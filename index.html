@@ -30,6 +30,13 @@
   .item .nm{font-weight:650}
   .item .ds{font-size:13px;color:var(--muted);margin-top:2px}
   .item .pr{font-weight:700;margin-top:6px;color:var(--brand)}
+  .item.has-opts{align-items:flex-start}
+  .opts{margin-top:8px;border-top:1px dashed var(--line)}
+  .opt{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line)}
+  .opt:last-child{border-bottom:0;padding-bottom:0}
+  .opt .ol{flex:1;min-width:0;font-weight:600}
+  .opt .op{font-weight:700;color:var(--brand)}
+  .line .sz{white-space:nowrap;font-weight:600;color:var(--muted)}
   .qty{display:flex;align-items:center;gap:6px;flex:none}
   .qty button{width:34px;height:34px;border-radius:10px;border:0;background:var(--brand-soft);color:var(--brand);font-size:20px;font-weight:700;line-height:1}
   .qty .n{min-width:20px;text-align:center;font-weight:700}
@@ -117,7 +124,7 @@ async function init() {
   db.ref('menu').on('value', snap => {
     items = listOf(snap.val()).filter(i => i.available).map(i => ({ ...i, price: Number(i.price) || 0 }))
       .sort((a, b) => String(a.category).localeCompare(b.category) || String(a.name).localeCompare(b.name));
-    for (const id in cart) if (!items.find(i => i.id === id)) delete cart[id];
+    for (const k in cart) if (!cartPick(items, k)) delete cart[k];
     renderMenu(); renderBar();
   }, e => toast(friendly(e), 'alert'));
   // follow this phone's orders from today (live)
@@ -148,7 +155,7 @@ function watchOrder(id) {
 
 const cats = () => [...new Set(items.map(i => i.category))];
 const count = () => Object.values(cart).reduce((a, b) => a + b, 0);
-const sum = () => Object.entries(cart).reduce((s, [id, n]) => s + (items.find(i => i.id === id)?.price || 0) * n, 0);
+const sum = () => cartLines(items, cart).reduce((s, l) => s + l.price * l.n, 0);
 
 function render() {
   $('#app').innerHTML = `
@@ -175,16 +182,22 @@ function render() {
 const qtyHtml = id => cart[id]
   ? `<div class="qty"><button data-d="-">−</button><span class="n">${cart[id]}</span><button data-d="+">+</button></div>`
   : `<button class="add" data-d="+">Add</button>`;
-const itemHtml = it => `
-  <div class="card item">
+const itemHtml = it => {
+  const os = optsOf(it);
+  return `
+  <div class="card item ${os.length ? 'has-opts' : ''}">
     ${dishImg(it, '', 200)}
     <div class="info">
       <div class="nm">${esc(it.name)}</div>
       ${it.description ? `<div class="ds">${esc(it.description)}</div>` : ''}
-      <div class="pr">${money(it.price)}</div>
+      ${os.length ? `<div class="opts">${os.map(o => `
+        <div class="opt"><span class="ol">${esc(o.label)}</span><span class="op">${money(o.price)}</span>
+          <div data-id="${esc(cartKey(it.id, o.k))}">${qtyHtml(cartKey(it.id, o.k))}</div></div>`).join('')}</div>`
+        : `<div class="pr">${money(it.price)}</div>`}
     </div>
-    <div data-id="${esc(it.id)}">${qtyHtml(it.id)}</div>
+    ${os.length ? '' : `<div data-id="${esc(it.id)}">${qtyHtml(it.id)}</div>`}
   </div>`;
+};
 
 function renderMenu() {
   if (!$('#menu')) return;
@@ -237,10 +250,7 @@ function renderBar() {
 }
 
 async function placeOrder(note) {
-  const lines = Object.entries(cart).map(([id, qty]) => {
-    const it = items.find(i => i.id === id);
-    return it && { id, name: it.name, price: it.price, qty };
-  }).filter(Boolean);
+  const lines = cartLines(items, cart).map(l => orderLine(l, l.n));
   if (!lines.length) throw new Error('Your cart is empty.');
   const id = db.ref('orders').push().key;
   try {
@@ -263,16 +273,16 @@ function openCart() {
   bg.className = 'sheet-bg';
   bg.onclick = e => { if (e.target === bg) bg.remove(); };
   const draw = () => {
-    const lines = Object.entries(cart).map(([id, n]) => ({ it: items.find(i => i.id === id), n })).filter(l => l.it);
+    const lines = cartLines(items, cart);
     if (!lines.length) { bg.remove(); renderMenu(); renderBar(); return; }
     const note = $('#note', bg)?.value || '';
     bg.innerHTML = `<div class="sheet">
       <h2>Your order · ${esc(place(table))}</h2>
-      ${lines.map(({ it, n }) => `
-        <div class="line" data-id="${esc(it.id)}">
-          <div class="nm"><b>${esc(it.name)}</b><div class="small muted">${money(it.price)} each</div></div>
-          <div class="qty"><button data-d="-">−</button><span class="n">${n}</span><button data-d="+">+</button></div>
-          <div style="min-width:76px;text-align:right;font-weight:600">${money(it.price * n)}</div>
+      ${lines.map(l => `
+        <div class="line" data-id="${esc(l.key)}">
+          <div class="nm"><b>${esc(l.name)}</b>${l.size ? ` <span class="sz">${esc(l.size)}</span>` : ''}<div class="small muted">${money(l.price)} each</div></div>
+          <div class="qty"><button data-d="-">−</button><span class="n">${l.n}</span><button data-d="+">+</button></div>
+          <div style="min-width:76px;text-align:right;font-weight:600">${money(l.price * l.n)}</div>
         </div>`).join('')}
       <div class="total"><span>Total</span><span>${money(sum())}</span></div>
       <div class="field"><label>Note for the kitchen (optional)</label>
@@ -324,7 +334,7 @@ function ordersHtml() {
     return `<div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <b>Order ${esc(o.code)}</b><span class="pill ${esc(s)}">${s === 'new' ? 'received' : esc(s)}</span></div>
-      <div class="small muted" style="margin-top:4px">${o.items.map(l => `${l.qty}× ${esc(l.name)}`).join(', ')} · <b>${money(o.total)}</b></div>
+      <div class="small muted" style="margin-top:4px">${o.items.map(l => `${l.qty}× ${esc(lineName(l))}`).join(', ')} · <b>${money(o.total)}</b></div>
       ${s === 'cancelled' ? '' : `<div class="steps">${step('Received', '1', lvl >= 1)}${step('Preparing', '2', lvl >= 2)}${step('Delivered', '3', lvl >= 3)}</div>`}
     </div>`;
   }).join('') + `<p class="small muted" style="text-align:center;margin:6px 0 0">Updates live. You can keep browsing the menu.</p>` : `<p class="muted">No orders yet.</p>`;
@@ -338,7 +348,7 @@ init().catch(e => { $('#app').innerHTML = `<div class="empty"><h2>Couldn't load 
   if (typeof window.CK_FIREBASE === 'undefined') miss.push('config.js');
   if (typeof firebase === 'undefined') miss.push('firebase-app-compat.js');
   if (typeof CONFIGURED === 'undefined') miss.push('common.js');
-  if (typeof CONFIGURED !== 'undefined' && window.CK_VERSION !== '20261030104128') miss.push('common.js (this one is from an older version, upload the new common.js)');
+  if (typeof CONFIGURED !== 'undefined' && window.CK_VERSION !== '20261031043856') miss.push('common.js (this one is from an older version, upload the new common.js)');
   miss = miss.filter(function (v, i, a) { return a.indexOf(v) === i; });
   if (!miss.length) return;
   var s = document.getElementById('splash');
