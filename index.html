@@ -243,7 +243,7 @@ function renderBar() {
     ${n ? `<button class="btn go" id="go"><span>${n} item${n > 1 ? 's' : ''} · ${money(sum())}</span><span>View cart ${ic('arrow', 16)}</span></button>` : ''}`;
   if ($('#ords')) $('#ords').onclick = openOrders;
   $('#call').onclick = async () => {
-    try { await db.ref('calls/' + table).set({ at: TS() }); } catch { /* already called in the last 30 s */ }
+    try { await db.ref('calls/' + table).set({ at: TS() }); ntfySend(settings.waiterNtfy, `${place(table)} is calling a waiter`); } catch { /* already called in the last 30 s */ }
     toast('A waiter is on the way');
   };
   if (n) $('#go').onclick = openCart;
@@ -265,6 +265,7 @@ async function placeOrder(note) {
     if (/PERMISSION_DENIED/i.test((e.code || '') + e.message)) throw new Error('Could not send. Prices may have just changed or an item sold out, or an order was sent a moment ago. Please wait 10 seconds and try again.');
     throw new Error(friendly(e));
   }
+  ntfySend(settings.waiterNtfy, `New order: ${place(table)}`, lines.map(l => `${l.qty} x ${lineName(l)}`).join(', ') + (note ? '\nNote: ' + String(note).slice(0, 300) : ''));
   return id;
 }
 
@@ -348,7 +349,7 @@ init().catch(e => { $('#app').innerHTML = `<div class="empty"><h2>Couldn't load 
   if (typeof window.CK_FIREBASE === 'undefined') miss.push('config.js');
   if (typeof firebase === 'undefined') miss.push('firebase-app-compat.js');
   if (typeof CONFIGURED === 'undefined') miss.push('common.js');
-  if (typeof CONFIGURED !== 'undefined' && window.CK_VERSION !== '20261031043856') miss.push('common.js (this one is from an older version, upload the new common.js)');
+  if (typeof CONFIGURED !== 'undefined' && window.CK_VERSION !== '20261031071527') miss.push('common.js (this one is from an older version, upload the new common.js)');
   miss = miss.filter(function (v, i, a) { return a.indexOf(v) === i; });
   if (!miss.length) return;
   var s = document.getElementById('splash');

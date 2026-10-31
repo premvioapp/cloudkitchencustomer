@@ -1,4 +1,4 @@
-window.CK_VERSION = '20261031043856';
+window.CK_VERSION = '20261031071527';
 // Shared helpers for all Cloud Kitchen sites (Firebase Realtime Database version)
 const FB = window.CK_FIREBASE || {};
 const CONFIGURED = !!(FB.apiKey && FB.databaseURL && !/PASTE-/.test(FB.apiKey + FB.appId));
@@ -217,6 +217,33 @@ function toast(msg, cls = '', ms = 3500) {
 
 // "ding-ding" alert sound (no sound file needed)
 let audioCtx;
+// ---------- Phone pop-up notifications ----------
+// Android (and home-screen apps) only allow pop-ups through a service worker; plain `new Notification` fails there.
+let swReg = null;
+function setupNotify() {
+  if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+  navigator.serviceWorker.register('sw.js').then(r => { swReg = r; }).catch(() => {});
+}
+const notifyOn = () => 'Notification' in window && Notification.permission === 'granted';
+async function askNotify() {
+  if (!('Notification' in window)) return 'unsupported';
+  try { return await Notification.requestPermission(); } catch { return Notification.permission; }
+}
+async function notify(title, body, tag) {
+  if (!notifyOn()) return;
+  const opts = { body: body || '', tag: tag || title, renotify: true, icon: 'icon-192.png', badge: 'icon-192.png', vibrate: [250, 120, 250, 120, 250], requireInteraction: true };
+  try {
+    const r = swReg || (navigator.serviceWorker && await navigator.serviceWorker.getRegistration());
+    if (r) { await r.showNotification(title, opts); return; }
+  } catch {}
+  try { new Notification(title, opts); } catch {}
+}
+// Free phone alert through the ntfy app (works even when the website is closed)
+function ntfySend(topic, title, body) {
+  if (!topic || !/^[A-Za-z0-9_-]{1,64}$/.test(topic)) return;
+  fetch(`https://ntfy.sh/${encodeURIComponent(topic)}?title=${encodeURIComponent(title)}&priority=high&tags=bell`, { method: 'POST', body: body || title, mode: 'no-cors', keepalive: true }).catch(() => {});
+}
+
 function ding() {
   try {
     audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
